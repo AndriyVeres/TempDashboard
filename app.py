@@ -1,4 +1,4 @@
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
 from datetime    import datetime
 import os
 import base64
@@ -8,6 +8,7 @@ import threading
 import socket
 import time
 import random
+from sys import getsizeof
 
 # pip install cryptodomex
 from Cryptodome.Hash import SHA256, HMAC
@@ -15,13 +16,14 @@ from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
 from Cryptodome.Protocol.KDF import PBKDF2
 
-# TODO remove
-from sys import getsizeof
 HOST         = "0.0.0.0"
 BGCOLOR      = "black"
 color        = "red"
 temperature  = "--"
 last_data_ts = datetime.now().timestamp()
+
+#TODO refactor
+is_tcp_server_initialized = False
 
 PASSWORD             = os.getenv("PASSWORD")
 ALGORITHM_NONCE_SIZE = int(os.getenv("ALGORITHM_NONCE_SIZE"))
@@ -92,21 +94,25 @@ def my_tcp_server():
             print("Skipped a connection request from %s:%s, size=%d"%(clientAddress[0], clientAddress[1], int(getsizeof(encrypted_data))));
         # conn.close()
 
-class Dashboard(BaseHTTPRequestHandler):
+def create_app():
+    global is_tcp_server_initialized
+    if is_tcp_server_initialized == False:
+        thr = threading.Thread(target=my_tcp_server)
+        thr.daemon = True
+        thr.start()
+        is_tcp_server_initialized = True
+    else:
+        print("Skip TCP server")
 
-    def do_GET(self):
+    app = Flask(__name__)
+    @app.route('/')
+    def hello():
         global temperature, color, last_data_ts
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
         curr_ts = datetime.now().timestamp()
         if int(curr_ts-last_data_ts) > 90:
             temperature="--"
             color="red"
-
-        self.wfile.write(bytes(
-            "<html>\
+        return "<html>\
                 <body BGCOLOR=\"" + BGCOLOR + "\">\
                     <style>\
                         .header{\
@@ -120,28 +126,7 @@ class Dashboard(BaseHTTPRequestHandler):
                         <h1>" + str(temperature) + "</h1>\
                     </div>\
                 </body>\
-            </html>",
-            "utf-8"))
+            </html>"
 
-def my_page():
-    server = HTTPServer((HOST, HTTP_PORT), Dashboard)
-    print("Running")
-    print(PASSWORD)
-    print(ALGORITHM_NONCE_SIZE)
-    print(ALGORITHM_TAG_SIZE)
-    print(ALGORITHM_KEY_SIZE)
-    print(PBKDF2_SALT_SIZE)
-    print(PBKDF2_ITERATIONS)
-    print(HTTP_PORT)
-    print(TCP_PORT)
-    server.serve_forever()
-    server.server_close()
-
-def main():
-    thr = threading.Thread(target=my_tcp_server)
-    thr.daemon = True
-    thr.start()
-    my_page()
-
-if __name__ == '__main__':
-    main()
+    app.run(host=HOST, port=HTTP_PORT)
+    return app
